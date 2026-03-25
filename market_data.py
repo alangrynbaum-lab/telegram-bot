@@ -5,19 +5,44 @@ import requests
 API_KEY = os.environ.get("TWELVE_DATA_KEY", "")
 BASE_URL = "https://api.twelvedata.com"
 
-CRYPTO_ALIASES = {
+ALIASES = {
+    # Criptos
     "BTC": "BTC/USD", "ETH": "ETH/USD", "SOL": "SOL/USD",
     "ADA": "ADA/USD", "XRP": "XRP/USD", "BNB": "BNB/USD",
     "DOGE": "DOGE/USD", "AVAX": "AVAX/USD", "DOT": "DOT/USD",
     "LINK": "LINK/USD", "MATIC": "MATIC/USD", "LTC": "LTC/USD",
+    # Commodities
+    "GC=F": "XAU/USD", "GOLD": "XAU/USD", "ORO": "XAU/USD",
+    "SI=F": "XAG/USD", "PLATA": "XAG/USD",
+    "CL=F": "WTI/USD", "WTI": "WTI/USD", "PETROLEO": "WTI/USD",
+    "NG=F": "NATGAS/USD", "GAS": "NATGAS/USD",
+    # Forex
+    "EURUSD=X": "EUR/USD", "EURUSD": "EUR/USD",
+    "USDJPY=X": "USD/JPY", "USDJPY": "USD/JPY",
+    "GBPUSD=X": "GBP/USD", "GBPUSD": "GBP/USD",
+    "USDARS": "USD/ARS",
+}
+
+ASSET_TYPE_MAP = {
+    "BTC/USD": "🪙 Cripto", "ETH/USD": "🪙 Cripto", "SOL/USD": "🪙 Cripto",
+    "ADA/USD": "🪙 Cripto", "XRP/USD": "🪙 Cripto", "BNB/USD": "🪙 Cripto",
+    "DOGE/USD": "🪙 Cripto", "AVAX/USD": "🪙 Cripto", "LTC/USD": "🪙 Cripto",
+    "XAU/USD": "🥇 Commodity", "XAG/USD": "🥈 Commodity",
+    "WTI/USD": "🛢 Commodity", "NATGAS/USD": "⚡ Commodity",
+    "EUR/USD": "💱 Forex", "USD/JPY": "💱 Forex",
+    "GBP/USD": "💱 Forex", "USD/ARS": "💱 Forex",
 }
 
 
-def detect_ticker(ticker: str) -> tuple:
-    upper = ticker.upper()
-    if upper in CRYPTO_ALIASES:
-        return CRYPTO_ALIASES[upper], True
-    return upper, False
+def detect_ticker(ticker: str) -> str:
+    upper = ticker.upper().replace("-", "").replace("_", "")
+    # Buscar en aliases
+    if upper in ALIASES:
+        return ALIASES[upper]
+    # Si tiene / ya es formato Twelve Data
+    if "/" in ticker:
+        return ticker.upper()
+    return upper
 
 
 def api_get(endpoint: str, params: dict) -> dict:
@@ -30,7 +55,7 @@ def api_get(endpoint: str, params: dict) -> dict:
 
 
 def get_asset_info(ticker_raw: str) -> dict:
-    symbol, is_crypto = detect_ticker(ticker_raw)
+    symbol = detect_ticker(ticker_raw)
 
     quote = api_get("quote", {"symbol": symbol})
     if quote.get("status") == "error" or "close" not in quote:
@@ -38,13 +63,12 @@ def get_asset_info(ticker_raw: str) -> dict:
 
     try:
         price = float(quote.get("close") or 0)
-        prev_close = float(quote.get("previous_close") or 0)
         day_high = float(quote.get("high") or 0)
         day_low = float(quote.get("low") or 0)
         volume = float(quote.get("volume")) if quote.get("volume") else None
         name = quote.get("name", symbol)
         change_pct = float(quote.get("percent_change") or 0)
-        asset_type = "🪙 Cripto" if is_crypto else "📈 Acción / ETF"
+        asset_type = ASSET_TYPE_MAP.get(symbol, "📈 Acción / ETF")
 
         rsi_data = api_get("rsi", {"symbol": symbol, "interval": "1day", "time_period": 14, "outputsize": 1})
         rsi = None
@@ -129,7 +153,6 @@ def format_message(d: dict) -> str:
     name = escape_md(d["name"])
     asset_type = escape_md(d["asset_type"])
     currency = d.get("currency", "USD")
-    price_str = escape_md(fmt_price(d["price"], currency))
 
     chg = d.get("change_pct")
     chg_emoji = "🟢" if chg and chg >= 0 else "🔴"
