@@ -17,7 +17,6 @@ ASSET_TYPE_MAP = {
 
 
 def detect_ticker(ticker: str) -> str:
-    """Auto-correct common crypto tickers (BTC → BTC-USD)"""
     crypto_aliases = {
         "BTC": "BTC-USD", "ETH": "ETH-USD", "SOL": "SOL-USD",
         "ADA": "ADA-USD", "XRP": "XRP-USD", "BNB": "BNB-USD",
@@ -28,15 +27,20 @@ def detect_ticker(ticker: str) -> str:
 
 
 def calc_rsi(series: pd.Series, period: int = 14) -> float:
+    if len(series) < period + 1:
+        return None
     delta = series.diff()
     gain = delta.clip(lower=0).rolling(window=period).mean()
     loss = -delta.clip(upper=0).rolling(window=period).mean()
     rs = gain / loss
     rsi = 100 - (100 / (1 + rs))
-    return round(float(rsi.iloc[-1]), 2) if not rsi.empty else None
+    val = rsi.iloc[-1]
+    return round(float(val), 2) if not pd.isna(val) else None
 
 
 def calc_macd(series: pd.Series):
+    if len(series) < 26:
+        return None, None, None
     ema12 = series.ewm(span=12, adjust=False).mean()
     ema26 = series.ewm(span=26, adjust=False).mean()
     macd_line = ema12 - ema26
@@ -86,30 +90,46 @@ def format_volume(n) -> str:
 
 def get_asset_info(ticker_raw: str) -> dict:
     ticker = detect_ticker(ticker_raw)
-    
+
     try:
         t = yf.Ticker(ticker)
-        info = t.info
 
-        # Validar que existe
-        price = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("ask")
-        if not price:
-            # Intentar con history
-            hist_check = t.history(period="2d")
-            if hist_check.empty:
-                return {"error": True}
-            price = float(hist_check["Close"].iloc[-1])
-
-        # Tipo de activo
-        quote_type = info.get("quoteType", "EQUITY")
-        asset_type = ASSET_TYPE_MAP.get(quote_type, f"📄 {quote_type}")
-
-        # Datos históricos para indicadores (1 año)
+        # Obtener histórico primero (más confiable)
         hist = t.history(period="1y")
         if hist.empty:
-            return {"error": True}
-        
+            # Intentar con 5d por si es un activo con menos historia
+            hist = t.history(period="5d")
+            if hist.empty:
+                return {"error": True}
+
         close = hist["Close"]
+        price = float(close.iloc[-1])
+
+        # Info del activo
+        try:
+            info = t.info
+        except Exception:
+            info = {}
+
+        quote_type = info.get("quoteType", "EQUITY")
+        asset_type = ASSET_TYPE_MAP.get(quote_type, f"📄 {quote_type}")
+        name = info.get("longName") or info.get("shortName") or ticker
+        currency = info.get("currency", "USD")
+
+        # Precios del día desde history
+        day_high = float(hist["High"].iloc[-1])
+        day_low = float(hist["Low"].iloc[-1])
+        volume = float(hist["Volume"].iloc[-1]) if "Volume" in hist.columns else None
+
+        # Variación respecto al día anterior
+        prev_close = None
+        change_pct = None
+        if len(close) >= 2:
+            prev_close = float(close.iloc[-2])
+            change_pct = ((price - prev_close) / prev_close) * 100
+
+        avg_volume = info.get("averageVolume")
+        market_cap = info.get("marketCap")
 
         # Indicadores técnicos
         rsi = calc_rsi(close)
@@ -117,32 +137,12 @@ def get_asset_info(ticker_raw: str) -> dict:
         ema200 = calc_ema(close, 200)
         ema50 = calc_ema(close, 50)
 
-        # Señales
         rsi_signal = "🟢 Sobreventa" if rsi and rsi < 30 else ("🔴 Sobrecompra" if rsi and rsi > 70 else "⚪ Neutral")
         macd_signal_txt = "🟢 Alcista" if macd_hist and macd_hist > 0 else "🔴 Bajista"
-        
+
         ema_signal = "N/A"
         if ema200 and price:
             ema_signal = "🟢 Sobre EMA200" if price > ema200 else "🔴 Bajo EMA200"
-
-        # Precios del día
-        day_high = info.get("dayHigh") or info.get("regularMarketDayHigh")
-        day_low = info.get("dayLow") or info.get("regularMarketDayLow")
-        prev_close = info.get("previousClose") or info.get("regularMarketPreviousClose")
-        volume = info.get("volume") or info.get("regularMarketVolume")
-        avg_volume = info.get("averageVolume")
-
-        # Variación
-        change_pct = None
-        if prev_close and price:
-            change_pct = ((price - prev_close) / prev_close) * 100
-
-        # Market cap
-        market_cap = info.get("marketCap")
-
-        # Nombre
-        name = info.get("longName") or info.get("shortName") or ticker
-        currency = info.get("currency", "USD")
 
         return {
             "error": False,
@@ -174,7 +174,6 @@ def get_asset_info(ticker_raw: str) -> dict:
 
 
 def escape_md(text: str) -> str:
-    """Escape special chars for MarkdownV2"""
     special = r'_*[]()~`>#+-=|{}.!'
     return re.sub(f'([{re.escape(special)}])', r'\\\1', str(text))
 
@@ -193,8 +192,7 @@ def format_message(d: dict) -> str:
     currency = d.get("currency", "USD")
 
     price_str = escape_md(fmt_price(d["price"], currency))
-    
-    # Variación con emoji
+
     chg = d.get("change_pct")
     if chg is not None:
         chg_emoji = "🟢" if chg >= 0 else "🔴"
@@ -217,7 +215,7 @@ def format_message(d: dict) -> str:
     macd_hist = escape_md(str(d.get("macd_hist", "N/A")))
     macd_sig_txt = escape_md(d.get("macd_signal_txt", ""))
 
-    ema200 = escape_md(fmt_price(d.get("ema200"), currency)) if d.get("ema200") else "N/A \\(pocos datos\\)"
+    ema200 = escape_md(fmt_price(d.get("ema200"), currency)) if d.get("ema200") else "N/A"
     ema50 = escape_md(fmt_price(d.get("ema50"), currency)) if d.get("ema50") else "N/A"
     ema_sig = escape_md(d.get("ema_signal", "N/A"))
 
