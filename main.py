@@ -7,8 +7,8 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 # ── CONFIG ──
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-FINNHUB_KEY    = os.environ.get("FINNHUB_KEY")
+TELEGRAM_TOKEN = os.environ.get("8338839356:AAECjh5gK4onj89C24feVuAfmeFrb_z8Ry8")
+FINNHUB_KEY    = os.environ.get("d72ndvpr01qlfd9nsq1gd72ndvpr01qlfd9nsq20")
 ALLOWED_USER   = os.environ.get("ALLOWED_USER_ID")  # tu Telegram user ID (opcional, para privacidad)
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
