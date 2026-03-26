@@ -14,7 +14,7 @@ ALLOWED_USER   = os.environ.get("ALLOWED_USER_ID")  # tu Telegram user ID (opcio
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-finnhub_client = finnhub.Client(api_key=FINNHUB_KEY)
+finnhub_client = finnhub.Client(api_key=d72ndvpr01qlfd9nsq1gd72ndvpr01qlfd9nsq20)
 
 # ── MI PORTFOLIO ──
 MY_PORTFOLIO = {
