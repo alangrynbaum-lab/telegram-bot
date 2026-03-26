@@ -11,38 +11,70 @@ ALIASES = {
     "ADA": "ADA/USD", "XRP": "XRP/USD", "BNB": "BNB/USD",
     "DOGE": "DOGE/USD", "AVAX": "AVAX/USD", "DOT": "DOT/USD",
     "LINK": "LINK/USD", "MATIC": "MATIC/USD", "LTC": "LTC/USD",
+    "PEPE": "PEPE/USD", "WIF": "WIF/USD", "SHIB": "SHIB/USD",
     # Commodities
-    "GC=F": "XAU/USD", "GOLD": "XAU/USD", "ORO": "XAU/USD",
-    "SI=F": "XAG/USD", "PLATA": "XAG/USD",
-    "CL=F": "WTI/USD", "WTI": "WTI/USD", "PETROLEO": "WTI/USD",
-    "NG=F": "NATGAS/USD", "GAS": "NATGAS/USD",
-    # Forex
+    "GC=F": "XAU/USD", "GOLD": "XAU/USD", "ORO": "XAU/USD", "XAU": "XAU/USD",
+    "SI=F": "XAG/USD", "PLATA": "XAG/USD", "XAG": "XAG/USD",
+    "CL=F": "WTI/USD", "WTI": "WTI/USD", "PETROLEO": "WTI/USD", "CRUDE": "WTI/USD",
+    "NG=F": "NATGAS/USD", "GAS": "NATGAS/USD", "NATGAS": "NATGAS/USD",
+    "COBRE": "COPPER/USD", "COPPER": "COPPER/USD",
+    "TRIGO": "WHEAT/USD", "WHEAT": "WHEAT/USD",
+    "MAIZ": "CORN/USD", "CORN": "CORN/USD",
+    # Forex comunes
     "EURUSD=X": "EUR/USD", "EURUSD": "EUR/USD",
     "USDJPY=X": "USD/JPY", "USDJPY": "USD/JPY",
     "GBPUSD=X": "GBP/USD", "GBPUSD": "GBP/USD",
-    "USDARS": "USD/ARS",
+    "USDARS=X": "USD/ARS", "USDARS": "USD/ARS",
+    "USDBRL=X": "USD/BRL", "USDBRL": "USD/BRL",
+    "USDCLP=X": "USD/CLP", "USDCLP": "USD/CLP",
+    "USDMXN=X": "USD/MXN", "USDMXN": "USD/MXN",
+    "USDCHF=X": "USD/CHF", "USDCHF": "USD/CHF",
+    # Índices
+    "^GSPC": "SPX", "SP500": "SPX", "SPX": "SPX",
+    "^NDX": "NDX", "NASDAQ": "NDX", "NDX": "NDX",
+    "^DJI": "DJI", "DOW": "DJI",
+    "^MERV": "MERV", "MERVAL": "MERV",
 }
 
 ASSET_TYPE_MAP = {
-    "BTC/USD": "🪙 Cripto", "ETH/USD": "🪙 Cripto", "SOL/USD": "🪙 Cripto",
-    "ADA/USD": "🪙 Cripto", "XRP/USD": "🪙 Cripto", "BNB/USD": "🪙 Cripto",
-    "DOGE/USD": "🪙 Cripto", "AVAX/USD": "🪙 Cripto", "LTC/USD": "🪙 Cripto",
-    "XAU/USD": "🥇 Commodity", "XAG/USD": "🥈 Commodity",
-    "WTI/USD": "🛢 Commodity", "NATGAS/USD": "⚡ Commodity",
-    "EUR/USD": "💱 Forex", "USD/JPY": "💱 Forex",
-    "GBP/USD": "💱 Forex", "USD/ARS": "💱 Forex",
+    "XAU/USD": "🥇 Commodity — Oro",
+    "XAG/USD": "🥈 Commodity — Plata",
+    "WTI/USD": "🛢 Commodity — Petróleo",
+    "NATGAS/USD": "⚡ Commodity — Gas Natural",
+    "COPPER/USD": "🔶 Commodity — Cobre",
+    "WHEAT/USD": "🌾 Commodity — Trigo",
+    "CORN/USD": "🌽 Commodity — Maíz",
+    "EUR/USD": "💱 Forex",
+    "USD/JPY": "💱 Forex", "GBP/USD": "💱 Forex",
+    "USD/ARS": "💱 Forex", "USD/BRL": "💱 Forex",
+    "USD/CLP": "💱 Forex", "USD/MXN": "💱 Forex",
+    "USD/CHF": "💱 Forex",
+    "SPX": "📊 Índice", "NDX": "📊 Índice",
+    "DJI": "📊 Índice", "MERV": "📊 Índice",
 }
 
 
 def detect_ticker(ticker: str) -> str:
-    upper = ticker.upper().replace("-", "").replace("_", "")
-    # Buscar en aliases
+    upper = ticker.upper().strip()
     if upper in ALIASES:
         return ALIASES[upper]
-    # Si tiene / ya es formato Twelve Data
-    if "/" in ticker:
-        return ticker.upper()
+    # Si ya tiene formato X/Y es cripto o forex directo
+    if "/" in upper:
+        return upper
     return upper
+
+
+def search_symbol(query: str) -> str:
+    """Busca el símbolo exacto en Twelve Data si no está en aliases"""
+    result = requests.get(
+        f"{BASE_URL}/symbol_search",
+        params={"symbol": query, "apikey": API_KEY},
+        timeout=10
+    ).json()
+    data = result.get("data", [])
+    if data:
+        return data[0]["symbol"]
+    return None
 
 
 def api_get(endpoint: str, params: dict) -> dict:
@@ -58,8 +90,15 @@ def get_asset_info(ticker_raw: str) -> dict:
     symbol = detect_ticker(ticker_raw)
 
     quote = api_get("quote", {"symbol": symbol})
+
+    # Si no encuentra, intenta búsqueda automática
     if quote.get("status") == "error" or "close" not in quote:
-        return {"error": True}
+        found = search_symbol(ticker_raw)
+        if found:
+            symbol = found
+            quote = api_get("quote", {"symbol": symbol})
+        if quote.get("status") == "error" or "close" not in quote:
+            return {"error": True}
 
     try:
         price = float(quote.get("close") or 0)
